@@ -1,7 +1,7 @@
 # Конфигурация Telegram-бота для пересылки сигналов
 
 # Токен бота от @BotFather
-TOKEN = "8230078379:AAF6MjmGprRLlQ1YFoXHW4-QaTrxe2gn4U8"
+TOKEN = "8327664202:AAFqo9QTosrzE0eESU69uDzscjiaa-R-50c"
 
 # ID администраторов (список)
 ADMIN_IDS = [5506126690, 612781324]
@@ -41,4 +41,5 @@ STATUS_MESSAGES = {
     STATUS_ACTIVE: "✅ Активная подписка",
     STATUS_INACTIVE: "❌ Подписка неактивна",
     STATUS_EXPIRED: "⏰ Подписка истекла"
+
 }
