@@ -42,6 +42,8 @@ class Database:
                     txid TEXT,
                     screenshot_file_id TEXT,
                     status TEXT DEFAULT 'pending',
+                    payment_method TEXT DEFAULT 'crypto',
+                    plan TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users (telegram_id)
                 )
@@ -60,6 +62,17 @@ class Database:
                 
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN last_seen TEXT")
+            except sqlite3.OperationalError:
+                pass  # Колонка уже существует
+            
+            # Добавляем новые колонки в таблицу платежей
+            try:
+                cursor.execute("ALTER TABLE payments ADD COLUMN payment_method TEXT DEFAULT 'crypto'")
+            except sqlite3.OperationalError:
+                pass  # Колонка уже существует
+            
+            try:
+                cursor.execute("ALTER TABLE payments ADD COLUMN plan TEXT")
             except sqlite3.OperationalError:
                 pass  # Колонка уже существует
             
@@ -231,16 +244,16 @@ class Database:
             result = cursor.fetchone()
             return result[0] if result else None
     
-    def add_payment(self, user_id, txid=None, screenshot_file_id=None, status="pending"):
+    def add_payment(self, user_id, txid=None, screenshot_file_id=None, status="pending", payment_method="crypto", plan=None):
         """Добавление платежа"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
             try:
                 cursor.execute('''
-                    INSERT INTO payments (user_id, txid, screenshot_file_id, status, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (user_id, txid, screenshot_file_id, status, datetime.now().isoformat()))
+                    INSERT INTO payments (user_id, txid, screenshot_file_id, status, payment_method, plan, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (user_id, txid, screenshot_file_id, status, payment_method, plan, datetime.now().isoformat()))
                 
                 conn.commit()
                 return cursor.lastrowid
@@ -248,7 +261,7 @@ class Database:
                 print(f"Ошибка добавления платежа: {e}")
                 return None
     
-    def update_payment(self, user_id, txid=None, screenshot_file_id=None, status=None):
+    def update_payment(self, user_id, txid=None, screenshot_file_id=None, status=None, payment_method=None, plan=None):
         """Обновление платежа"""
         try:
             fields = []
@@ -263,6 +276,12 @@ class Database:
             if status:
                 fields.append("status = ?")
                 params.append(status)
+            if payment_method:
+                fields.append("payment_method = ?")
+                params.append(payment_method)
+            if plan:
+                fields.append("plan = ?")
+                params.append(plan)
 
             if not fields:
                 return False
@@ -292,7 +311,7 @@ class Database:
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT txid, screenshot_file_id, status, created_at
+                SELECT txid, screenshot_file_id, status, payment_method, plan, created_at
                 FROM payments 
                 WHERE user_id = ? AND status IN ('pending', 'sent_screenshot', 'sent_txid')
                 ORDER BY created_at DESC
@@ -305,7 +324,9 @@ class Database:
                     'txid': result[0],
                     'screenshot_file_id': result[1],
                     'status': result[2],
-                    'created_at': result[3]
+                    'payment_method': result[3],
+                    'plan': result[4],
+                    'created_at': result[5]
                 }
             return None
     
@@ -315,7 +336,7 @@ class Database:
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT p.id, u.username, p.txid, p.status, p.created_at
+                SELECT p.id, u.username, p.txid, p.status, p.payment_method, p.plan, p.created_at
                 FROM payments p
                 JOIN users u ON p.user_id = u.telegram_id
                 ORDER BY p.created_at DESC

@@ -49,10 +49,10 @@ class SignalBot:
     
     def safe_parse_date(self, value):
         """Безопасно конвертирует ISO-дату в datetime или None"""
-        if isinstance(value, str):
+        if isinstance(value, str) and value.strip():
             try:
                 return datetime.fromisoformat(value)
-            except ValueError:
+            except (ValueError, TypeError):
                 return None
         return None
     
@@ -193,8 +193,8 @@ class SignalBot:
             
             # Добавляем кнопки после введения
             keyboard = self.create_reply_keyboard([
-                ["💰 Оплата", "📚 FAQ"],
-                ["🧾 Поддержка"]
+                ["💰 Оплата"],
+                ["🧾 Поддержка", "🆘 Помощь"]
             ])
             self.send_message(chat_id, "💡 Выберите действие для продолжения:", keyboard)
                 
@@ -369,7 +369,7 @@ class SignalBot:
                 ["📈 Получать сигналы"],
                 ["💰 Оплата"],
                 ["ℹ️ Мой статус"],
-                ["🧾 Поддержка", "❓ Помощь"]
+                ["🧾 Поддержка", "🆘 Помощь"]
             ])
 
             welcome_text = (
@@ -486,38 +486,15 @@ class SignalBot:
     def handle_payment_start(self, chat_id, user_id):
         """Начало процесса оплаты - выбор тарифа"""
         try:
-            payment_text = """
-💰 <b>Получите доступ к закрытым сигналам!</b>
-
-Сразу после активации подписки вы получите:
-•  Премиум-сигналы от профи  
-•  Комментарии и обновления по сделкам  
-•  Аналитику по ключевым валютам  
-•  Разбор рыночной структуры  
-
-<b>Тарифы:</b>
-1️⃣ 1 месяц — <b>39 USDT (TRC20)</b>  
-2️⃣ 3 месяца — <b>99 USDT (TRC20)</b>  
-3️⃣ Lifetime — <b>239 USDT</b> (навсегда)
-
-🪙 Оплата на адрес:
-<code>TVx9zE2B2t6K4bpSdeFwH1Rfdp9RqKZZoT</code>
-
-После оплаты:
-1️⃣ Отправьте скриншот перевода  
-2️⃣ Укажите TXID  
-3️⃣ Дождитесь подтверждения администратора 
-
-Чтобы оплатить с карты , напишите @PTTmanager
-
-🚀 После подтверждения — вы начнёте получать сигналы автоматически!
-"""
+            payment_text = "Выберите подходящий тариф:"
             
             keyboard = self.create_reply_keyboard([
-                ["✅ Я оплатил"],
+                ["1 месяц — 39 USDT"],
+                ["3 месяца — 99 USDT"],
+                ["Пожизненно — 239 USDT"],
                 ["↩️ Назад"]
             ])
-            self.send_message(chat_id, payment_text, keyboard, parse_mode="HTML")
+            self.send_message(chat_id, payment_text, keyboard)
             
             # Устанавливаем состояние для кнопки "Назад"
             self.db.set_user_state(user_id, "payment_intro")
@@ -535,34 +512,87 @@ class SignalBot:
                 self.send_message(chat_id, "❌ Неверный тариф. Попробуйте еще раз.")
                 return
             
-            # Обновляем план пользователя
-            self.db.update_user_status(user_id, "pending", plan_key)
+            # Показываем методы оплаты для выбранного тарифа
+            payment_text = "Выберите способ оплаты:"
             
-            # Показываем информацию об оплате
-            payment_text = f"""💳 <b>Тариф: {plan['name']} — ${plan['price']}</b>
-
-Оплатите <b>${plan['price']} USDT (TRC20)</b> на адрес:
-
-<code>{CRYPTO_ADDRESS}</code>
-
-После перевода нажмите "✅ Я оплатил"."""
-            
-            # Создаем Reply Keyboard кнопки
+            # Создаем Reply Keyboard кнопки для выбора метода оплаты
             keyboard = self.create_reply_keyboard([
-                ["✅ Я оплатил"],
+                ["💰 Оплатить криптой (TRC20)"],
+                ["⚡ Оплатить через Tribute"],
                 ["↩️ Назад"]
             ])
             
-            self.send_message(chat_id, payment_text, keyboard, parse_mode="HTML")
+            self.send_message(chat_id, payment_text, keyboard)
             
-            # Устанавливаем состояние ожидания подтверждения оплаты
-            self.db.set_user_state(user_id, "waiting_payment")
+            # Сохраняем выбранный план в состоянии пользователя
+            self.db.set_user_state(user_id, f"payment_method_{plan_key}")
             
         except Exception as e:
             error_msg = f"[ERROR] Обработка выбора плана: {e}"
             print(error_msg)
             self.send_log(error_msg)
     
+    def handle_crypto_payment(self, chat_id, user_id, plan_key):
+        """Обработка выбора криптооплаты"""
+        try:
+            plan = PLANS.get(plan_key)
+            if not plan:
+                self.send_message(chat_id, "❌ Неверный тариф. Попробуйте еще раз.")
+                return
+            
+            # Показываем адрес для оплаты
+            payment_text = f"""Отправьте оплату на адрес:
+TRC20: {CRYPTO_ADDRESS}
+После перевода прикрепите скрин перевода."""
+            
+            keyboard = self.create_reply_keyboard([
+                ["📸 Отправить скрин"],
+                ["↩️ Назад"]
+            ])
+            self.send_message(chat_id, payment_text, keyboard)
+            
+            # Устанавливаем состояние ожидания скриншота с информацией о методе оплаты
+            self.db.set_user_state(user_id, f"waiting_screenshot_crypto_{plan_key}")
+            
+        except Exception as e:
+            error_msg = f"[ERROR] Обработка криптооплаты: {e}"
+            print(error_msg)
+            self.send_log(error_msg)
+    
+    def handle_tribute_payment(self, chat_id, user_id, plan_key):
+        """Обработка выбора оплаты через Tribute"""
+        try:
+            plan = PLANS.get(plan_key)
+            if not plan:
+                self.send_message(chat_id, "❌ Неверный тариф. Попробуйте еще раз.")
+                return
+            
+            # Показываем кнопку для открытия Tribute
+            payment_text = """Оплата через Tribute осуществляется в официальном Telegram mini app.
+Нажмите кнопку ниже, чтобы перейти 👇"""
+            
+            # Создаем inline кнопку для открытия Tribute
+            keyboard = {
+                "inline_keyboard": [[
+                    {"text": "💸 Открыть Tribute", "url": TRIBUTE_LINK}
+                ]],
+                "resize_keyboard": True
+            }
+            
+            self.send_message(chat_id, payment_text, keyboard)
+            
+            # После оплаты через Tribute пользователь вернется и отправит скрин
+            keyboard_back = self.create_reply_keyboard([["↩️ Назад"]])
+            self.send_message(chat_id, "После завершения оплаты в Tribute отправьте скриншот:", keyboard_back)
+            
+            # Устанавливаем состояние ожидания скриншота с информацией о методе оплаты
+            self.db.set_user_state(user_id, f"waiting_screenshot_tribute_{plan_key}")
+            
+        except Exception as e:
+            error_msg = f"[ERROR] Обработка оплаты через Tribute: {e}"
+            print(error_msg)
+            self.send_log(error_msg)
+
     def handle_payment_done(self, chat_id, user_id):
         """Обработка кнопки 'Я оплатил' - Шаг 2"""
         try:
@@ -580,37 +610,69 @@ class SignalBot:
             print(error_msg)
             self.send_log(error_msg)
     
-    def handle_screenshot(self, chat_id, user_id, username, file_id):
-        """Обработка получения скриншота - Шаг 2 продолжение"""
+    def handle_screenshot(self, chat_id, user_id, username, file_id, user_state=None):
+        """Обработка получения скриншота"""
         try:
-            # Создаем или обновляем платеж
-            payment = self.db.get_user_payment(user_id)
-            if not payment:
-                # Создаем новый платеж
-                payment_id = self.db.add_payment(user_id, screenshot_file_id=file_id, status="sent_screenshot")
-            else:
-                # Обновляем существующий
-                self.db.update_payment(user_id, screenshot_file_id=file_id, status="sent_screenshot")
+            # Определяем метод оплаты и план из состояния пользователя
+            payment_method = "crypto"
+            plan_key = None
+            
+            if user_state:
+                if user_state.startswith("waiting_screenshot_crypto_"):
+                    payment_method = "crypto"
+                    plan_key = user_state.replace("waiting_screenshot_crypto_", "")
+                elif user_state.startswith("waiting_screenshot_tribute_"):
+                    payment_method = "tribute"
+                    plan_key = user_state.replace("waiting_screenshot_tribute_", "")
+            
+            # Создаем новый платеж с информацией о методе и плане
+            payment_id = self.db.add_payment(
+                user_id, 
+                screenshot_file_id=file_id, 
+                status="pending", 
+                payment_method=payment_method,
+                plan=plan_key
+            )
+            
+            # Обновляем план пользователя
+            if plan_key:
+                self.db.update_user_status(user_id, "pending", plan_key)
             
             # Логируем скриншот в локальный файл
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
             try:
                 with open("screenshots_log.txt", "a", encoding="utf-8") as f:
-                    f.write(f"{current_time} | @{username or 'unknown'} | ID {user_id} | file_id: {file_id}\n")
+                    f.write(f"{current_time} | @{username or 'unknown'} | ID {user_id} | method: {payment_method} | plan: {plan_key} | file_id: {file_id}\n")
             except Exception as log_error:
                 print(f"[LOG ERROR] Не удалось записать скриншот в файл: {log_error}")
             
             # Отправляем кликабельную ссылку в лог-канал
             self.send_file_log(file_id, username, user_id)
             
-            self.send_message(chat_id, "✅ Скрин получен! Теперь отправьте TXID транзакции.")
+            # Отправляем подтверждение
+            self.send_message(chat_id, "✅ Скрин получен, ожидайте подтверждения администратора.")
             
-            # Устанавливаем состояние ожидания TXID
-            self.db.set_user_state(user_id, "waiting_txid")
+            # Логируем платеж в канал в новом формате
+            plan_name = PLANS.get(plan_key, {}).get("name", "Unknown") if plan_key else "Unknown"
             
-            # Создаем клавиатуру с кнопкой "Назад"
-            keyboard = self.create_reply_keyboard([["↩️ Назад"]])
-            self.send_message(chat_id, "Введите TXID транзакции текстом или нажмите 'Назад' для возврата в меню:", keyboard)
+            log_message = f"""[NEW PAYMENT]
+user: @{username or 'unknown'} (ID {user_id})
+method: {payment_method}
+tariff: {plan_name}
+status: pending"""
+            
+            self.send_log(log_message)
+            
+            # Сбрасываем состояние пользователя
+            self.db.set_user_state(user_id, None)
+            
+            # Показываем сообщение о завершении без FAQ
+            keyboard = self.create_reply_keyboard([
+                ["📈 Получать сигналы", "💰 Оплата"],
+                ["ℹ️ Мой статус"],
+                ["🧾 Поддержка", "🆘 Помощь"]
+            ])
+            self.send_message(chat_id, "✅ Спасибо! Ваш платёж отправлен на проверку.", keyboard)
             
         except Exception as e:
             error_msg = f"[ERROR] Обработка скриншота: {e}"
@@ -618,47 +680,11 @@ class SignalBot:
             self.send_log(error_msg)
     
     def handle_txid(self, chat_id, user_id, username, txid):
-        """Обработка получения TXID - Шаг 3 завершение"""
+        """Обработка получения TXID - устаревший метод, сохранен для совместимости"""
         try:
-            # Обновляем платеж с TXID
-            self.db.update_payment(user_id, txid=txid, status="sent_txid")
-            
-            # Получаем информацию о пользователе и платеже
-            user = self.db.get_user(user_id)
-            payment = self.db.get_user_payment(user_id)
-            
-            self.send_message(chat_id, "✅ Заявка отправлена! Ожидайте подтверждения администратора.")
-            
-            # Отправляем лог в канал Telegram
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-            plan_name = PLANS.get(user["plan"], {}).get("name", "Unknown") if user else "Unknown"
-            
-            log_message = f"""[NEW PAYMENT]
-User: @{username or 'unknown'} (ID {user_id})
-Plan: {plan_name}
-TXID: {txid}
-Time: {current_time}
-Status: pending"""
-            
-            self.send_log(log_message)
-            
-            # Дублируем запись TXID в отдельный текстовый лог для истории
-            try:
-                with open("txid_log.txt", "a", encoding="utf-8") as f:
-                    f.write(f"{current_time} | @{username or 'unknown'} | ID {user_id} | Plan: {plan_name} | TXID {txid}\n")
-            except Exception as log_error:
-                print(f"[LOG ERROR] Не удалось записать TXID в файл: {log_error}")
-            
-            # Сбрасываем состояние пользователя
-            self.db.set_user_state(user_id, None)
-            
-            # Возвращаем главное меню
-            keyboard = self.create_reply_keyboard([
-                ["📈 Получать сигналы", "💰 Оплата"],
-                ["📚 FAQ", "🧾 Поддержка"],
-                ["ℹ️ Мой статус"]
-            ])
-            self.send_message(chat_id, "Выберите действие:", keyboard)
+            # Этот метод больше не используется в новой логике оплаты
+            # TXID не требуется, только скриншот
+            self.send_message(chat_id, "❌ TXID больше не требуется. Отправьте только скриншот транзакции.")
             
         except Exception as e:
             error_msg = f"[ERROR] Обработка TXID: {e}"
@@ -670,81 +696,85 @@ Status: pending"""
         try:
             user = self.db.get_user(user_id)
             if user:
-                start_date = self.safe_parse_date(user.get("start_date"))
-                end_date = self.safe_parse_date(user.get("end_date"))
-                join_date = self.safe_parse_date(user.get("joined_at"))
+                # Правильно парсим даты из базы
+                start_date = None
+                end_date = None
+                
+                if user.get("start_date"):
+                    try:
+                        start_date = datetime.fromisoformat(user["start_date"])
+                    except (ValueError, TypeError):
+                        start_date = None
+                
+                if user.get("end_date"):
+                    try:
+                        end_date = datetime.fromisoformat(user["end_date"])
+                    except (ValueError, TypeError):
+                        end_date = None
+                
+                plan_key = user.get("plan")
+                plan_name = PLANS.get(plan_key, {}).get("name", "Не выбран") if plan_key else "Не выбран"
+                
+                # Получаем информацию о последнем платеже
+                payment = self.db.get_user_payment(user_id)
+                payment_method = "Не указан"
+                if payment:
+                    payment_method = "Crypto" if payment.get("payment_method") == "crypto" else "Tribute"
+                
+                # Формируем базовую информацию
+                start_date_str = start_date.strftime("%d.%m.%Y") if start_date else "Не указана"
+                end_date_str = "Бессрочно" if end_date is None else end_date.strftime("%d.%m.%Y")
+                
+                # Определяем статус с учетом текущего времени
+                current_time = datetime.now()
                 
                 if user["status"] == "active":
-                    plan_name = PLANS.get(user["plan"], {}).get("name", "Unknown")
-                    if user["plan"] == "lifetime" or not user.get("end_date"):
-                        message = f"""ℹ️ Мой статус
-
-✅ Подписка активна ({plan_name})
-📅 Действует до: бессрочно
-🎯 Статус: Активный подписчик
-📡 Сигналы: Приходят автоматически
-
-💎 Добро пожаловать в закрытое сообщество трейдеров!"""
+                    if user["plan"] == "lifetime" or end_date is None:
+                        status_text = "✅ Активна"
+                        end_date_str = "Бессрочно"
                     else:
-                        if end_date:
-                            end_date_str = end_date.strftime("%d.%m.%Y")
-                            days_left = (end_date - datetime.now()).days
-                            message = f"""ℹ️ Мой статус
-
-✅ Подписка активна ({plan_name})
-📅 Действует до: {end_date_str}
-⏳ Осталось дней: {days_left}
-🎯 Статус: Активный подписчик
-📡 Сигналы: Приходят автоматически
-
-💡 Для продления подписки используйте раздел 💰 Оплата"""
+                        if end_date and end_date > current_time:
+                            status_text = "✅ Активна"
                         else:
-                            message = f"""ℹ️ Мой статус
-
-✅ Подписка активна ({plan_name})
-🎯 Статус: Активный подписчик
-📡 Сигналы: Приходят автоматически
-
-💡 Для продления подписки используйте раздел 💰 Оплата"""
+                            status_text = "⚠️ Истекла"
+                            # Обновляем статус в базе если подписка истекла
+                            if end_date and end_date <= current_time:
+                                self.db.update_user_status(user_id, "expired")
                 elif user["status"] == "pending":
-                    message = """ℹ️ Мой статус
-
-⏳ Подписка ожидает подтверждения
-📋 Статус: Платеж в обработке
-⏱ Обычно активация происходит в течение 5-10 минут
-
-💬 Если прошло больше времени, обратитесь в 🧾 Поддержка"""
+                    status_text = "⏳ Ожидает подтверждения"
                 elif user["status"] == "expired":
-                    message = """ℹ️ Мой статус
-
-❌ Подписка истекла
-📅 Требуется продление для получения сигналов
-💰 Для активации используйте раздел 💰 Оплата
-
-🔄 Выберите новый тариф и оплатите для продолжения"""
+                    status_text = "⚠️ Истекла"
                 else:
-                    message = """ℹ️ Мой статус
-
-❌ Подписка не активна
-📋 Статус: Не подписан
-💰 Для получения сигналов выберите тариф в разделе 💰 Оплата
-
-🚀 Начните зарабатывать с нашими сигналами!"""
+                    status_text = "❌ Неактивна"
                 
-                # Добавляем дополнительную информацию о датах если доступна
-                if start_date:
-                    message += f"\n\n🚀 Начало подписки: {start_date.strftime('%d.%m.%Y')}"
-                if join_date:
-                    message += f"\n📅 Дата регистрации: {join_date.strftime('%d.%m.%Y')}"
+                message = f"""📊 Статус: {status_text}
+📦 Тариф: {plan_name}
+💰 Метод оплаты: {payment_method}
+📅 Начало подписки: {start_date_str}
+📅 Окончание: {end_date_str}"""
+                
+                # Добавляем специальные сообщения для истекших/неактивных подписок
+                if user["status"] in ["expired", "none"]:
+                    if user["status"] == "expired":
+                        message += "\n\n⚠️ Ваша подписка истекла. Чтобы продлить доступ, нажмите «💰 Оплата»."
+                    else:
+                        message += "\n\n❌ У вас нет активной подписки. Нажмите «💰 Оплата» чтобы оформить доступ."
                     
             else:
                 message = "❌ Пользователь не найден. Попробуйте команду /start"
             
             self.send_message(chat_id, message)
             
-            # Добавляем reply-кнопку "Назад"
-            keyboard = self.create_reply_keyboard([["↩️ Назад"]])
-            self.send_message(chat_id, "Нажмите '↩️ Назад', чтобы вернуться в меню.", keyboard)
+            # Добавляем кнопки в зависимости от статуса
+            if user and user["status"] in ["expired", "none"]:
+                keyboard = self.create_reply_keyboard([
+                    ["💰 Оплата"],
+                    ["↩️ Назад"]
+                ])
+            else:
+                keyboard = self.create_reply_keyboard([["↩️ Назад"]])
+            
+            self.send_message(chat_id, "Выберите действие:", keyboard)
         except Exception as e:
             error_msg = f"[ERROR] Обработка статуса: {e}"
             print(error_msg)
@@ -802,28 +832,54 @@ Status: pending"""
                         self.send_message(chat_id, "❌ Пользователь не найден")
                         return
                     
-                    # Активируем пользователя
-                    now = datetime.now()
-                    end_date = now + timedelta(days=30)
+                    plan_key = user.get("plan")
+                    if not plan_key or plan_key not in PLANS:
+                        self.send_message(chat_id, "❌ У пользователя не выбран тариф или неверный тариф")
+                        return
                     
-                    success = self.db.update_user_status(
-                        target_user_id, 
-                        "active", 
-                        now.isoformat(), 
-                        end_date.isoformat()
-                    )
+                    plan = PLANS[plan_key]
+                    now = datetime.now()
+                    
+                    # Активируем пользователя с правильным тарифом
+                    start_date = datetime.now()
+                    
+                    if plan_key == "lifetime":
+                        success = self.db.update_user_status(
+                            target_user_id, 
+                            "active", 
+                            plan_key, 
+                            start_date.isoformat(), 
+                            None
+                        )
+                        end_date_str = "бессрочно"
+                    else:
+                        end_date = start_date + timedelta(days=plan["days"])
+                        success = self.db.update_user_status(
+                            target_user_id, 
+                            "active", 
+                            plan_key, 
+                            start_date.isoformat(), 
+                            end_date.isoformat()
+                        )
+                        end_date_str = end_date.strftime("%Y-%m-%d")
                     
                     if success:
                         username = user["username"] or "unknown"
-                        end_date_str = end_date.strftime("%Y-%m-%d")
+                        plan_name = plan["name"]
                         
                         # Уведомляем пользователя
-                        self.send_message(target_user_id, f"✅ Добро пожаловать!\nВаша подписка активна до {end_date_str}.")
+                        success_message = f"✅ Ваша подписка активирована: {plan_name}. Спасибо, что с нами!"
                         
-                        # Логируем подтверждение
-                        self.send_log(f"[CONFIRMED] user @{username} (ID {target_user_id}), до {end_date_str}")
+                        self.send_message(target_user_id, success_message)
                         
-                        self.send_message(chat_id, f"✅ Пользователь {target_user_id} активирован")
+                        # Логируем подтверждение в новом формате
+                        active_until = end_date_str if end_date_str != "бессрочно" else "lifetime"
+                        self.send_log(f"""[CONFIRMED]
+user: @{username} (ID {target_user_id})
+tariff: {plan_name}
+active_until: {active_until}""")
+                        
+                        self.send_message(chat_id, f"✅ Пользователь {target_user_id} активирован с тарифом {plan_name}")
                     else:
                         self.send_message(chat_id, "❌ Ошибка при активации пользователя")
                         
@@ -835,14 +891,17 @@ Status: pending"""
                 if payments:
                     message = "📊 Последние платежи:\n\n"
                     for payment in payments:
-                        payment_id, username, txid, status, created_at = payment
+                        payment_id, username, txid, status, payment_method, plan, created_at = payment
                         txid_short = txid[:10] + "..." if txid and len(txid) > 10 else (txid or "N/A")
                         created_date = self.safe_parse_date(created_at)
                         created_date_str = created_date.strftime("%Y-%m-%d %H:%M") if created_date else "неизвестно"
                         
-                        status_emoji = "✅" if status == "confirmed" else "⏳" if status == "sent_txid" else "📸" if status == "sent_screenshot" else "❌"
+                        status_emoji = "✅" if status == "confirmed" else "⏳" if status == "pending" else "❌"
+                        plan_name = PLANS.get(plan, {}).get("name", "Unknown") if plan else "Unknown"
+                        method_name = "крипта" if payment_method == "crypto" else "Tribute"
                         
-                        message += f"{status_emoji} #{payment_id} @{username or 'no_username'} — 50 USDT (TRC20)\n"
+                        message += f"{status_emoji} #{payment_id} @{username or 'no_username'}\n"
+                        message += f"План: {plan_name} | Метод: {method_name}\n"
                         message += f"TXID: {txid_short}\n"
                         message += f"Статус: {status}\n"
                         message += f"Дата: {created_date_str}\n\n"
@@ -1125,14 +1184,18 @@ Status: pending"""
             
             message = "💰 Последние платежи:\n\n"
             for payment in payments:
-                payment_id, username, txid, status, created_at = payment
+                payment_id, username, txid, status, payment_method, plan, created_at = payment
                 txid_short = txid[:10] + "..." if txid and len(txid) > 10 else (txid or "N/A")
                 created_date = self.safe_parse_date(created_at)
                 created_date_str = created_date.strftime("%Y-%m-%d %H:%M") if created_date else "неизвестно"
                 
-                status_emoji = "✅" if status == "confirmed" else "⏳" if status == "sent_txid" else "📸" if status == "sent_screenshot" else "❌"
+                status_emoji = "✅" if status == "confirmed" else "⏳" if status == "pending" else "❌"
+                plan_name = PLANS.get(plan, {}).get("name", "Unknown") if plan else "Unknown"
+                method_name = "крипта" if payment_method == "crypto" else "Tribute"
                 
-                message += f"{status_emoji} @{username or 'no_username'} — TXID: {txid_short}\n"
+                message += f"{status_emoji} @{username or 'no_username'}\n"
+                message += f"План: {plan_name} | Метод: {method_name}\n"
+                message += f"TXID: {txid_short}\n"
                 message += f"Статус: {status} | Дата: {created_date_str}\n\n"
             
             self.send_message(chat_id, message)
@@ -1183,23 +1246,23 @@ Status: pending"""
                 return
             
             # Активируем пользователя
-            now = datetime.now()
+            start_date = datetime.now()
             if plan_key == "lifetime":
                 success = self.db.update_user_status(
                     target_user_id, 
                     "active", 
                     plan_key, 
-                    now.isoformat(), 
+                    start_date.isoformat(), 
                     None
                 )
                 end_date_str = "бессрочно"
             else:
-                end_date = now + timedelta(days=plan["days"])
+                end_date = start_date + timedelta(days=plan["days"])
                 success = self.db.update_user_status(
                     target_user_id, 
                     "active", 
                     plan_key, 
-                    now.isoformat(), 
+                    start_date.isoformat(), 
                     end_date.isoformat()
                 )
                 end_date_str = end_date.strftime("%Y-%m-%d")
@@ -1209,17 +1272,18 @@ Status: pending"""
                 plan_name = plan["name"]
                 
                 # Уведомляем пользователя
-                success_message = f"""🎉 Подписка активирована!
-💎 Тариф: {plan_name}
-📅 Действует до: {end_date_str}
-🔥 Добро пожаловать в закрытое сообщество!"""
+                success_message = f"✅ Ваша подписка активирована: {plan_name}. Спасибо, что с нами!"
                 
                 self.send_message(target_user_id, success_message)
                 
-                # Логируем подтверждение
-                self.send_log(f"[CONFIRMED] user @{username} (plan: {plan_name}), до {end_date_str}")
+                # Логируем подтверждение в новом формате
+                active_until = end_date_str if end_date_str != "бессрочно" else "lifetime"
+                self.send_log(f"""[CONFIRMED]
+user: @{username} (ID {target_user_id})
+tariff: {plan_name}
+active_until: {active_until}""")
                 
-                self.send_message(chat_id, f"✅ Пользователь {target_user_id} активирован")
+                self.send_message(chat_id, f"✅ Пользователь {target_user_id} активирован с тарифом {plan_name}")
             else:
                 self.send_message(chat_id, "❌ Ошибка при активации пользователя")
                 
@@ -1439,23 +1503,23 @@ Status: pending"""
                         plan = PLANS.get(plan_key)
                         
                         if plan:
-                            now = datetime.now()
+                            start_date = datetime.now()
                             if plan_key == "lifetime":
                                 success = self.db.update_user_status(
                                     target_user_id, 
                                     "active", 
                                     plan_key, 
-                                    now.isoformat(), 
+                                    start_date.isoformat(), 
                                     None
                                 )
                                 end_date_str = "бессрочно"
                             else:
-                                end_date = now + timedelta(days=plan["days"])
+                                end_date = start_date + timedelta(days=plan["days"])
                                 success = self.db.update_user_status(
                                     target_user_id, 
                                     "active", 
                                     plan_key, 
-                                    now.isoformat(), 
+                                    start_date.isoformat(), 
                                     end_date.isoformat()
                                 )
                                 end_date_str = end_date.strftime("%Y-%m-%d")
@@ -1467,10 +1531,7 @@ Status: pending"""
                                 username = target_user["username"] or "unknown"
                                 plan_name = plan["name"]
                                 
-                                success_message = f"""🎉 Подписка активирована!
-💎 Тариф: {plan_name}
-📅 Действует до: {end_date_str}
-🔥 Добро пожаловать в закрытое сообщество!"""
+                                success_message = f"✅ Ваша подписка активирована: {plan_name}. Спасибо, что с нами!"
                                 
                                 self.send_message(target_user_id, success_message)
                                 
@@ -1478,7 +1539,7 @@ Status: pending"""
                     print(f"[ERROR] Подтверждение пользователя {target_user_id}: {e}")
             
             self.send_message(chat_id, f"✅ Подтверждено {confirmed_count} из {len(pending_users)} пользователей.")
-            self.send_log(f"[QUICK CONFIRM] Подтверждено {confirmed_count} пользователей")
+            self.send_log(f"[QUICK CONFIRM] Подтверждено {confirmed_count} пользователей с тарифами")
             
         except Exception as e:
             error_msg = f"[ERROR] Быстрое подтверждение: {e}"
@@ -1570,9 +1631,6 @@ Status: pending"""
             elif text == "🆘 Помощь":
                 self.handle_help_faq(chat_id)
             
-            elif text == "❓ Помощь":
-                self.handle_help_faq(chat_id)
-            
             elif text == "💰 Оплата":
                 self.handle_payment_start(chat_id, user_id)
             
@@ -1580,19 +1638,40 @@ Status: pending"""
                 self.handle_payment_done(chat_id, user_id)
             
             # Обработка выбора тарифов
-            elif text in ["1 месяц", "1 месяц — $39", "1m"]:
+            elif text == "1 месяц — 39 USDT":
                 self.handle_plan_selection(chat_id, user_id, "1m")
-            elif text in ["3 месяца", "3 месяца — $99", "3m"]:
+            elif text == "3 месяца — 99 USDT":
                 self.handle_plan_selection(chat_id, user_id, "3m")
-            elif text in ["Lifetime", "Пожизненно", "Пожизненно — $239", "lifetime"]:
+            elif text == "Пожизненно — 239 USDT":
                 self.handle_plan_selection(chat_id, user_id, "lifetime")
+            
+            # Обработка выбора методов оплаты
+            elif text == "💰 Оплатить криптой (TRC20)":
+                # Определяем план из состояния пользователя
+                if user_state and user_state.startswith("payment_method_"):
+                    plan_key = user_state.replace("payment_method_", "")
+                    self.handle_crypto_payment(chat_id, user_id, plan_key)
+                else:
+                    self.send_message(chat_id, "❌ Сначала выберите тариф")
+            
+            elif text == "⚡ Оплатить через Tribute":
+                # Определяем план из состояния пользователя
+                if user_state and user_state.startswith("payment_method_"):
+                    plan_key = user_state.replace("payment_method_", "")
+                    self.handle_tribute_payment(chat_id, user_id, plan_key)
+                else:
+                    self.send_message(chat_id, "❌ Сначала выберите тариф")
+            
+            elif text == "📸 Отправить скрин":
+                # Если пользователь нажал кнопку "Отправить скрин", просим отправить фото
+                self.send_message(chat_id, "📸 Отправьте скриншот перевода:")
             
             elif text == "↩️ Назад":
                 keyboard = self.create_reply_keyboard([
                     ["📈 Получать сигналы"],
                     ["💰 Оплата"],
                     ["ℹ️ Мой статус"],
-                    ["🧾 Поддержка", "❓ Помощь"]
+                    ["🧾 Поддержка", "🆘 Помощь"]
                 ])
                 self.send_message(chat_id, "Вы вернулись в главное меню.", keyboard)
             
@@ -1641,10 +1720,6 @@ Status: pending"""
             elif user_state == "waiting_txid":
                 self.handle_txid(chat_id, user_id, username, text)
             
-            # Проверка TXID без правильного состояния
-            elif not user_state and text and len(text) > 10 and not text.startswith("/"):
-                self.send_message(chat_id, "⚠️ Сначала отправьте скриншот транзакции.")
-            
             # Обработка рассылки для админа
             elif user_state == "waiting_broadcast":
                 if user_id in ADMIN_IDS:
@@ -1677,9 +1752,12 @@ Status: pending"""
             
             # Обработка скриншотов
             elif message.get("photo"):
-                if user_state == "waiting_screenshot":
+                if (user_state and 
+                    (user_state == "waiting_screenshot" or 
+                     user_state.startswith("waiting_screenshot_crypto_") or 
+                     user_state.startswith("waiting_screenshot_tribute_"))):
                     file_id = message["photo"][-1]["file_id"]  # Берем самое большое изображение
-                    self.handle_screenshot(chat_id, user_id, username, file_id)
+                    self.handle_screenshot(chat_id, user_id, username, file_id, user_state)
         
         except Exception as e:
             error_msg = f"[ERROR] Обработка сообщения: {e}"

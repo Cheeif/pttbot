@@ -1,7 +1,7 @@
 # Конфигурация Telegram-бота для пересылки сигналов
 
 # Токен бота от @BotFather
-TOKEN = "8327664202:AAFqo9QTosrzE0eESU69uDzscjiaa-R-50c"
+TOKEN = "8230078379:AAF6MjmGprRLlQ1YFoXHW4-QaTrxe2gn4U8"
 
 # ID администраторов (список)
 ADMIN_IDS = [5506126690, 612781324]
@@ -16,6 +16,9 @@ SIGNAL_EXAMPLE_URL = "data/photo.jpg, data/fuck.jpg"
 
 # Криптоадрес для оплаты (TRC20 USDT)
 CRYPTO_ADDRESS = "TTeq3zoxzngwSW6rmWTTdW3bkohRfvnkCh"
+
+# Ссылка на Tribute mini app
+TRIBUTE_LINK = "https://t.me/tribute/app?startapp=dzcf"
 
 # ID канала с сигналами (откуда пересылаем)
 SIGNAL_CHANNEL_ID = -1003136921053
